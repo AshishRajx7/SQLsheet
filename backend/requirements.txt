@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+mysql-connector-python
+python-dotenv
+pydantic
+google-api-python-client
+google-auth
