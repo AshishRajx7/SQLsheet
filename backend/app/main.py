@@ -4,8 +4,6 @@ import json
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
-
-from fastapi.responses import HTMLResponse
 from datetime import datetime
 
 from google.oauth2.service_account import Credentials
@@ -18,7 +16,7 @@ from app.db import get_connection
 
 app = FastAPI(title="Google Sheets MySQL Sync")
 
-
+# Startup
 
 @app.on_event("startup")
 def startup():
@@ -38,10 +36,8 @@ def retry_with_backoff(fn, max_retries=5, base_delay=1.0):
         try:
             return fn()
         except HttpError as e:
-            status = e.resp.status
-            if status in (429, 500, 502, 503, 504):
-                sleep_time = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
-                time.sleep(sleep_time)
+            if e.resp.status in (429, 500, 502, 503, 504):
+                time.sleep(base_delay * (2 ** attempt) + random.uniform(0, 0.5))
             else:
                 raise
         except Exception:
@@ -50,7 +46,8 @@ def retry_with_backoff(fn, max_retries=5, base_delay=1.0):
             time.sleep(base_delay * (2 ** attempt))
 
 
-# Sheet to MySQL
+
+# Sheet → MySQL
 
 
 @app.post("/webhook/sheet")
@@ -69,11 +66,7 @@ async def sheet_webhook(request: Request):
             name = VALUES(name),
             email = VALUES(email)
         """,
-        (
-            data.get("id"),
-            data.get("name"),
-            data.get("email"),
-        )
+        (data.get("id"), data.get("name"), data.get("email"))
     )
 
     conn.commit()
@@ -115,21 +108,29 @@ def update_sheet_row(service, spreadsheet_id, sheet_name, row_id, values):
     return False
 
 
-# MySQL to Sheet
+def append_sheet_row(service, spreadsheet_id, sheet_name, values):
+    retry_with_backoff(lambda: service.spreadsheets().values().append(
+        spreadsheetId=spreadsheet_id,
+        range=f"{sheet_name}!A2:C",
+        valueInputOption="RAW",
+        body={"values": [values]}
+    ).execute())
+
+
+# MySQL → Sheet
+
 
 @app.api_route("/sync/mysql-to-sheet", methods=["GET", "POST"])
 def mysql_to_sheet():
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT *
         FROM mysql_change_log
         WHERE processed = FALSE
         ORDER BY created_at ASC
-        """
-    )
+    """)
     changes = cursor.fetchall()
 
     if not changes:
@@ -144,24 +145,28 @@ def mysql_to_sheet():
 
     for change in changes:
         payload = json.loads(change["payload"])
+        values = [payload["id"], payload["name"], payload["email"]]
 
         updated = update_sheet_row(
-            service=service,
-            spreadsheet_id=SPREADSHEET_ID,
-            sheet_name=SHEET_NAME,
-            row_id=payload["id"],
-            values=[
-                payload["id"],
-                payload["name"],
-                payload["email"]
-            ]
+            service,
+            SPREADSHEET_ID,
+            SHEET_NAME,
+            payload["id"],
+            values
         )
 
-        if updated:
-            cursor.execute(
-                "UPDATE mysql_change_log SET processed = TRUE WHERE id = %s",
-                (change["id"],)
+        if not updated:
+            append_sheet_row(
+                service,
+                SPREADSHEET_ID,
+                SHEET_NAME,
+                values
             )
+
+        cursor.execute(
+            "UPDATE mysql_change_log SET processed = TRUE WHERE id = %s",
+            (change["id"],)
+        )
 
     conn.commit()
     cursor.close()
@@ -171,6 +176,7 @@ def mysql_to_sheet():
 
 
 # API for frontend
+
 
 @app.get("/api/users")
 def get_users():
@@ -184,9 +190,6 @@ def get_users():
     conn.close()
 
     return {"users": rows}
-
-
-# Frontend
 
 
 @app.get("/", response_class=HTMLResponse)
