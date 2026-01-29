@@ -19,27 +19,19 @@ from app.db import get_connection
 app = FastAPI(title="Google Sheets MySQL Sync")
 
 
-# --------------------
-# Startup
-# --------------------
 
 @app.on_event("startup")
 def startup():
     init_db()
 
 
-# --------------------
-# Health
-# --------------------
-
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
-# --------------------
 # Retry with exponential backoff
-# --------------------
+
 
 def retry_with_backoff(fn, max_retries=5, base_delay=1.0):
     for attempt in range(max_retries):
@@ -58,9 +50,8 @@ def retry_with_backoff(fn, max_retries=5, base_delay=1.0):
             time.sleep(base_delay * (2 ** attempt))
 
 
-# --------------------
 # Sheet to MySQL
-# --------------------
+
 
 @app.post("/webhook/sheet")
 async def sheet_webhook(request: Request):
@@ -92,9 +83,8 @@ async def sheet_webhook(request: Request):
     return {"status": "ok"}
 
 
-# --------------------
 # Google Sheets helpers
-# --------------------
+
 
 def get_sheets_service():
     creds = Credentials.from_service_account_file(
@@ -125,9 +115,7 @@ def update_sheet_row(service, spreadsheet_id, sheet_name, row_id, values):
     return False
 
 
-# --------------------
 # MySQL to Sheet
-# --------------------
 
 @app.api_route("/sync/mysql-to-sheet", methods=["GET", "POST"])
 def mysql_to_sheet():
@@ -182,9 +170,7 @@ def mysql_to_sheet():
     return {"status": "synced"}
 
 
-# --------------------
 # API for frontend
-# --------------------
 
 @app.get("/api/users")
 def get_users():
@@ -200,10 +186,7 @@ def get_users():
     return {"users": rows}
 
 
-# --------------------
 # Frontend
-# --------------------
-
 
 
 @app.get("/", response_class=HTMLResponse)
